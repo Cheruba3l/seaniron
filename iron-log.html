@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#191919">
+<title>Iron Log</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23191919'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='%23F6F4EE' font-family='Arial Black'>IL</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23191919'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='%23F6F4EE' font-family='Arial Black'>IL</text></svg>">
+<style>
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: #F6F4EE; color: #191919; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #app { max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; min-height: 100vh; }
+  h1 { font-family: "Arial Narrow", "Helvetica Neue Condensed", Impact, sans-serif; text-transform: uppercase; letter-spacing: .02em; font-weight: 900; }
+  .card { background: #fff; border: 1px solid #E2DFD5; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+  .label { font-size: 12px; color: #6B6961; text-transform: uppercase; letter-spacing: .08em; font-weight: 600; }
+  .btn { width: 100%; padding: 14px; background: #191919; color: #F6F4EE; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; }
+  .btn:disabled { opacity: .4; }
+  .ghost { width: 100%; padding: 12px; background: transparent; border: 1px solid #C9C5B8; border-radius: 10px; font-size: 14px; cursor: pointer; color: #191919; }
+  input[type=number] { width: 72px; padding: 8px 10px; font-size: 16px; border: 1px solid #C9C5B8; border-radius: 8px; background: #FDFCF9; text-align: center; }
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  .exrow { display: flex; justify-content: space-between; padding: 6px 0; border-top: 1px solid #EFEDE5; font-size: 14px; }
+  .setrow { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid #EFEDE5; }
+  .stepbtn { width: 38px; height: 38px; border-radius: 8px; font-size: 20px; cursor: pointer; }
+  .minus { border: 1px solid #C9C5B8; background: #FDFCF9; color: #191919; }
+  .plus { border: 1px solid #191919; background: #191919; color: #F6F4EE; }
+  .muted { color: #6B6961; }
+  .splitpick { cursor: pointer; }
+  .bars { display: flex; gap: 5px; margin-top: 10px; }
+  .bar { width: 26px; height: 8px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ---------- training math ----------
+const e1rm = (w, r) => r > 0 ? w * (1 + r / 30) : 0;
+const round5 = x => Math.max(5, Math.round(x / 5) * 5);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---------- catalog ----------
+const CATALOG = {
+  bench:{name:"Barbell bench press",base:"bench",pct:.72,sets:4,lo:6,hi:10,inc:5,compound:true},
+  ohp:{name:"Overhead press",base:"ohp",pct:.70,sets:3,lo:8,hi:12,inc:5,compound:true},
+  inclineDb:{name:"Incline DB press (per hand)",base:"bench",pct:.28,sets:3,lo:8,hi:12,inc:5},
+  latRaise:{name:"Cable lateral raise",base:"ohp",pct:.12,sets:3,lo:12,hi:20,inc:5},
+  pushdown:{name:"Triceps pushdown",base:"bench",pct:.22,sets:3,lo:10,hi:15,inc:5},
+  deadlift:{name:"Deadlift",base:"deadlift",pct:.75,sets:3,lo:5,hi:8,inc:10,compound:true},
+  row:{name:"Barbell row",base:"row",pct:.72,sets:4,lo:8,hi:12,inc:5,compound:true},
+  pulldown:{name:"Lat pulldown",base:"pulldown",pct:.72,sets:3,lo:10,hi:15,inc:5},
+  facepull:{name:"Face pull",base:"ohp",pct:.18,sets:3,lo:12,hi:20,inc:5},
+  curl:{name:"Barbell curl",base:"row",pct:.28,sets:3,lo:8,hi:12,inc:5},
+  hammer:{name:"Hammer curl (per hand)",base:"row",pct:.14,sets:3,lo:10,hi:15,inc:5},
+  squat:{name:"Back squat",base:"squat",pct:.72,sets:4,lo:6,hi:10,inc:10,compound:true},
+  rdl:{name:"Romanian deadlift",base:"deadlift",pct:.55,sets:3,lo:8,hi:12,inc:10},
+  legpress:{name:"Leg press",base:"squat",pct:1.3,sets:3,lo:10,hi:15,inc:10},
+  legcurl:{name:"Seated leg curl",base:"squat",pct:.32,sets:3,lo:10,hi:15,inc:5},
+  legext:{name:"Leg extension",base:"squat",pct:.40,sets:3,lo:12,hi:15,inc:5},
+  calf:{name:"Standing calf raise",base:"squat",pct:.85,sets:4,lo:10,hi:15,inc:10},
+};
+const SPLITS = {
+  ppl:{name:"Push / Pull / Legs",desc:"6 days a week, highest volume",days:[
+    {key:"push",label:"Push",ex:["bench","ohp","inclineDb","latRaise","pushdown"]},
+    {key:"pull",label:"Pull",ex:["deadlift","row","pulldown","facepull","curl"]},
+    {key:"legs",label:"Legs",ex:["squat","rdl","legpress","legcurl","calf"]}]},
+  ul:{name:"Upper / Lower",desc:"4 days a week, balanced",days:[
+    {key:"upperA",label:"Upper A",ex:["bench","row","ohp","pulldown","curl","pushdown"]},
+    {key:"lowerA",label:"Lower A",ex:["squat","rdl","legpress","calf"]},
+    {key:"upperB",label:"Upper B",ex:["ohp","pulldown","inclineDb","row","latRaise","hammer"]},
+    {key:"lowerB",label:"Lower B",ex:["deadlift","legpress","legcurl","legext","calf"]}]},
+  fb:{name:"Full body ×3",desc:"3 days a week, time-efficient",days:[
+    {key:"fbA",label:"Day A",ex:["squat","bench","row","latRaise","curl"]},
+    {key:"fbB",label:"Day B",ex:["deadlift","ohp","pulldown","legcurl","pushdown"]},
+    {key:"fbC",label:"Day C",ex:["legpress","inclineDb","row","rdl","hammer"]}]},
+};
+const BASE_LIFTS = [
+  {id:"bench",name:"Bench press"},{id:"ohp",name:"Overhead press"},{id:"squat",name:"Back squat"},
+  {id:"deadlift",name:"Deadlift"},{id:"row",name:"Barbell row"},{id:"pulldown",name:"Lat pulldown"},
+];
+const KEY = "iron-log-v1";
+
+// ---------- state ----------
+let state = null;
+let draft = null;
+let setupSplit = "ppl";
+let setupBase = {};
+BASE_LIFTS.forEach(l => setupBase[l.id] = {weight:"",reps:"8"});
+try { const raw = localStorage.getItem(KEY); if (raw) state = JSON.parse(raw); } catch(e) {}
+
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(e) {} }
+
+// ---------- logic ----------
+function suggested(exId) {
+  const ex = CATALOG[exId];
+  if (state.lastWeights[exId]) return state.lastWeights[exId];
+  const b = state.baselines[ex.base];
+  if (!b || !b.weight) return 45;
+  return round5(e1rm(+b.weight, +b.reps) * ex.pct);
+}
+function lastPerf(exId) {
+  for (let i = state.sessions.length - 1; i >= 0; i--) {
+    const en = state.sessions[i].entries.find(e => e.exId === exId);
+    if (en) { const d = en.sets.filter(s => s.reps > 0); if (d.length) return d; }
+  }
+  return null;
+}
+function refE1(exId, sessions, n = 5) {
+  let best = 0, seen = 0;
+  for (let i = sessions.length - 1; i >= 0 && seen < n; i--) {
+    const en = sessions[i].entries.find(e => e.exId === exId);
+    if (en) { seen++; en.sets.forEach(s => best = Math.max(best, e1rm(s.weight, s.reps))); }
+  }
+  return best;
+}
+function sessionScore(entries, prior) {
+  const r = [];
+  for (const en of entries) {
+    if (!CATALOG[en.exId]?.compound) continue;
+    const ref = refE1(en.exId, prior);
+    if (!ref) continue;
+    let best = 0;
+    en.sets.forEach(s => best = Math.max(best, e1rm(s.weight, s.reps)));
+    if (best > 0) r.push(Math.min(best / ref, 1.1));
+  }
+  return r.length ? r.reduce((a,b)=>a+b,0)/r.length : null;
+}
+function readiness() {
+  const scored = state.sessions.filter(s => s.score != null).slice(-2);
+  if (!scored.length) return {label:"No fatigue data yet",detail:"Log a couple of sessions and fatigue tracking kicks in.",color:"#5F5E5A"};
+  const avg = scored.reduce((a,s)=>a+s.score,0)/scored.length;
+  if (avg >= .97) return {label:"Fresh",detail:"Rep performance is at or above your recent best. Push the top of your rep ranges.",color:"#0F6E56"};
+  if (avg >= .93) return {label:"Normal fatigue",detail:"Slight dip in reps at your usual weights. Train as planned.",color:"#185FA5"};
+  if (avg >= .88) return {label:"Elevated fatigue",detail:"Reps at your usual weights are down noticeably. Stop sets further from failure today.",color:"#BA7517"};
+  return {label:"High fatigue",detail:"Big drop in reps at your usual weights across sessions. Take a rest day or cut volume ~40% this session.",color:"#A32D2D"};
+}
+function scoreColor(s){ return s>=.97?"#0F6E56":s>=.93?"#185FA5":s>=.88?"#BA7517":"#A32D2D"; }
+
+// ---------- actions ----------
+window.pickSplit = id => { setupSplit = id; render(); };
+window.baseInput = (id, field, v) => { setupBase[id][field] = v; renderSetupBtn(); };
+function renderSetupBtn() {
+  const ok = BASE_LIFTS.every(l => +setupBase[l.id].weight > 0);
+  const b = document.getElementById("setupGo"); if (b) b.disabled = !ok;
+}
+window.finishSetup = () => {
+  const baselines = {};
+  BASE_LIFTS.forEach(l => baselines[l.id] = {weight:+setupBase[l.id].weight||0, reps:+setupBase[l.id].reps||8});
+  state = {split:setupSplit, baselines, dayIndex:0, sessions:[], lastWeights:{}};
+  save(); render();
+};
+window.startWorkout = () => {
+  const sp = SPLITS[state.split];
+  const day = sp.days[state.dayIndex % sp.days.length];
+  draft = {dayKey:day.key, dayLabel:day.label, entries: day.ex.map(exId => {
+    const ex = CATALOG[exId], w = suggested(exId);
+    return {exId, name:ex.name, sets: Array.from({length:ex.sets}, () => ({weight:w, reps:0}))};
+  })};
+  render();
+};
+window.setWeight = (ei, si, v) => { draft.entries[ei].sets[si].weight = +v || 0; };
+window.bumpReps = (ei, si, dir) => {
+  const ex = CATALOG[draft.entries[ei].exId];
+  const s = draft.entries[ei].sets[si];
+  if (dir > 0) s.reps = s.reps === 0 ? ex.lo : s.reps + 1;
+  else s.reps = Math.max(0, s.reps - 1);
+  const el = document.getElementById(`reps-${ei}-${si}`);
+  el.textContent = s.reps;
+  el.style.color = s.reps >= ex.hi ? "#0F6E56" : "#191919";
+};
+window.cancelWorkout = () => { draft = null; render(); };
+window.finishWorkout = () => {
+  const entries = draft.entries.map(e => ({...e, sets: e.sets.filter(s => s.reps > 0)})).filter(e => e.sets.length);
+  if (entries.length) {
+    const score = sessionScore(entries, state.sessions);
+    state.sessions.push({date:new Date().toISOString().slice(0,10), dayKey:draft.dayKey, dayLabel:draft.dayLabel, entries, score});
+    for (const e of entries) {
+      const ex = CATALOG[e.exId];
+      const used = Math.max(...e.sets.map(s => s.weight));
+      const allTop = e.sets.length >= ex.sets && e.sets.every(s => s.reps >= ex.hi);
+      state.lastWeights[e.exId] = allTop ? used + ex.inc : used;
+    }
+    state.dayIndex = (state.dayIndex + 1) % SPLITS[state.split].days.length;
+    save();
+  }
+  draft = null; render();
+};
+window.changeSplit = id => { state.split = id; state.dayIndex = 0; save(); render(); };
+window.resetAll = () => {
+  if (!confirm("Delete all your training data?")) return;
+  localStorage.removeItem(KEY); state = null; draft = null;
+  BASE_LIFTS.forEach(l => setupBase[l.id] = {weight:"",reps:"8"});
+  render();
+};
+
+// ---------- views ----------
+function render() {
+  const app = document.getElementById("app");
+  if (!state) { app.innerHTML = setupView(); renderSetupBtn(); }
+  else if (draft) app.innerHTML = workoutView();
+  else app.innerHTML = homeView();
+  window.scrollTo(0, 0);
+}
+
+function setupView() {
+  return `
+  <h1 style="font-size:34px;margin:8px 0 2px">Iron Log</h1>
+  <p class="muted" style="font-size:14px;margin-bottom:20px">Pick a split, set your starting numbers. The app prescribes every workout from there.</p>
+  <div class="label">1 · Choose a split</div>
+  <div style="margin:8px 0 20px">
+    ${Object.entries(SPLITS).map(([id,sp]) => `
+      <div class="card splitpick row" onclick="pickSplit('${id}')" style="border:${setupSplit===id?'2px solid #191919':'1px solid #E2DFD5'}">
+        <div><div style="font-weight:600">${sp.name}</div><div class="muted" style="font-size:13px">${sp.desc}</div></div>
+        ${setupSplit===id?'<div style="font-size:18px">✓</div>':''}
+      </div>`).join("")}
+  </div>
+  <div class="label">2 · Baseline numbers</div>
+  <p class="muted" style="font-size:13px;margin:4px 0 10px">Enter a weight and how many good reps you can do with it (any rep count works — 5×225 or 10×185 both fine).</p>
+  ${BASE_LIFTS.map(l => `
+    <div class="card row" style="padding:10px 16px">
+      <div style="font-size:15px">${l.name}</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" placeholder="lb" value="${esc(setupBase[l.id].weight)}" oninput="baseInput('${l.id}','weight',this.value)">
+        <span class="muted">×</span>
+        <input type="number" style="width:52px" value="${esc(setupBase[l.id].reps)}" oninput="baseInput('${l.id}','reps',this.value)">
+      </div>
+    </div>`).join("")}
+  <button class="btn" id="setupGo" style="margin-top:12px" onclick="finishSetup()">Start training</button>`;
+}
+
+function homeView() {
+  const sp = SPLITS[state.split];
+  const day = sp.days[state.dayIndex % sp.days.length];
+  const r = readiness();
+  const recent = state.sessions.slice(-6).filter(s => s.score != null);
+  return `
+  <div class="row" style="align-items:baseline">
+    <h1 style="font-size:30px;margin:8px 0">Iron Log</h1>
+    <span class="muted" style="font-size:13px">${sp.name}</span>
+  </div>
+  <div class="card" style="border-left:4px solid ${r.color};border-radius:0 10px 10px 0">
+    <div class="label" style="color:${r.color}">Fatigue · ${r.label}</div>
+    <div style="font-size:14px;margin-top:4px">${r.detail}</div>
+    ${recent.length ? `<div class="bars">${recent.map(s => `<div class="bar" style="background:${scoreColor(s.score)}"></div>`).join("")}</div>` : ""}
+  </div>
+  <div class="card">
+    <div class="label">Next session</div>
+    <h1 style="font-size:26px;margin:6px 0 10px">${day.label}</h1>
+    ${day.ex.map(exId => {
+      const ex = CATALOG[exId];
+      return `<div class="exrow"><span>${ex.name}</span><span class="muted">${ex.sets}×${ex.lo}–${ex.hi} @ <b style="color:#191919">${suggested(exId)} lb</b></span></div>`;
+    }).join("")}
+    <button class="btn" style="margin-top:12px" onclick="startWorkout()">Start ${day.label.toLowerCase()} workout</button>
+  </div>
+  ${state.sessions.length ? `
+  <div class="card">
+    <div class="label">History</div>
+    ${[...state.sessions].reverse().slice(0,8).map((s,i) => `
+      <div class="exrow" style="${i===0?'border-top:none':''}">
+        <span>${s.date} · <b>${s.dayLabel}</b></span>
+        <span class="muted">${s.entries.reduce((a,e)=>a+e.sets.length,0)} sets${s.score!=null?` · ${Math.round(s.score*100)}%`:""}</span>
+      </div>`).join("")}
+  </div>` : ""}
+  <div class="card">
+    <div class="label">Change split</div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      ${Object.entries(SPLITS).map(([id,s]) => `
+        <button onclick="changeSplit('${id}')" style="flex:1;padding:8px 4px;font-size:12px;border-radius:8px;cursor:pointer;border:${state.split===id?'2px solid #191919':'1px solid #C9C5B8'};background:${state.split===id?'#191919':'transparent'};color:${state.split===id?'#F6F4EE':'#191919'}">${s.name}</button>`).join("")}
+    </div>
+  </div>
+  <button class="ghost" style="color:#A32D2D;border-color:#E5C4C4" onclick="resetAll()">Reset all data</button>`;
+}
+
+function workoutView() {
+  return `
+  <div class="row" style="align-items:baseline">
+    <h1 style="font-size:30px;margin:8px 0">${draft.dayLabel}</h1>
+    <button onclick="cancelWorkout()" style="background:none;border:none;color:#6B6961;cursor:pointer;font-size:14px">Cancel</button>
+  </div>
+  ${draft.entries.map((entry, ei) => {
+    const ex = CATALOG[entry.exId];
+    const last = lastPerf(entry.exId);
+    return `
+    <div class="card">
+      <div class="row" style="align-items:baseline">
+        <div style="font-weight:600;font-size:15px">${entry.name}</div>
+        <div class="muted" style="font-size:13px">${ex.sets} × ${ex.lo}–${ex.hi}</div>
+      </div>
+      ${last ? `<div class="muted" style="font-size:12px;margin:3px 0 6px">Last: ${last.map(s=>`${s.weight}×${s.reps}`).join(", ")}</div>` : ""}
+      ${entry.sets.map((set, si) => `
+        <div class="setrow">
+          <span class="muted" style="font-size:12px;width:34px">Set ${si+1}</span>
+          <input type="number" style="width:64px" value="${set.weight}" oninput="setWeight(${ei},${si},this.value)">
+          <span class="muted" style="font-size:12px">lb ×</span>
+          <button class="stepbtn minus" onclick="bumpReps(${ei},${si},-1)">−</button>
+          <span id="reps-${ei}-${si}" style="width:30px;text-align:center;font-weight:600;font-size:17px">${set.reps}</span>
+          <button class="stepbtn plus" onclick="bumpReps(${ei},${si},1)">+</button>
+        </div>`).join("")}
+    </div>`;
+  }).join("")}
+  <button class="btn" onclick="finishWorkout()">Finish workout</button>
+  <p class="muted" style="font-size:12px;text-align:center;margin-top:10px">Hit the top of the rep range on every set and next session's weight goes up automatically.</p>`;
+}
+
+render();
+</script>
+</body>
+</html>
